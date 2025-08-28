@@ -401,3 +401,7 @@ htmlcov/
 coverage.xml
 *.cover
 .hypothesis/
+
+# Heroku
+.env.production
+.env.staging

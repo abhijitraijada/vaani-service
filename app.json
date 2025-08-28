@@ -1,0 +1,23 @@
+{
+  "name": "Event Suit Service",
+  "description": "API service for Event Suit application",
+  "repository": "https://github.com/yourusername/event-suit-service",
+  "keywords": ["python", "fastapi", "events", "api"],
+  "env": {
+    "VAANI_DATABASE_URL": {
+      "description": "Database connection string",
+      "required": true
+    }
+  },
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "basic"
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ]
+}
