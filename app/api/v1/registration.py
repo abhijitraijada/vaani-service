@@ -14,6 +14,7 @@ from app.schemas.registration import (
     RegistrationResponse
 )
 from app.schemas.enums import RegistrationType, RegistrationStatus
+from app.schemas.participant_search import ParticipantSearchResponse
 
 router = APIRouter(prefix="/registrations", tags=["Registrations"])
 
@@ -160,3 +161,82 @@ async def list_registrations(
     
     registrations = query.offset(skip).limit(limit).all()
     return registrations
+
+
+@router.get("/search/participant", response_model=ParticipantSearchResponse)
+async def search_participant_by_phone(
+    phone_number: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Search for a participant by phone number and return comprehensive data.
+    
+    This endpoint performs a single optimized query to retrieve:
+    1. Participant data and registration status
+    2. All members in the group if it's a group registration
+    3. Merged daily schedule combining event days with user preferences
+    
+    Returns 404 if no participant is found with the given phone number.
+    """
+    # Single optimized query with all necessary joins
+    registration = db.query(Registration)\
+        .options(
+            joinedload(Registration.members),
+            joinedload(Registration.daily_preferences).joinedload(DailyPreference.event_day)
+        )\
+        .join(RegistrationMember, Registration.id == RegistrationMember.registration_id)\
+        .filter(RegistrationMember.phone_number == phone_number)\
+        .first()
+    
+    if not registration:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No participant found with phone number: {phone_number}"
+        )
+    
+    # Create merged daily schedule
+    daily_schedule = []
+    for preference in registration.daily_preferences:
+        event_day = preference.event_day
+        if event_day:
+            schedule_item = {
+                # Event Day Information
+                "event_day_id": event_day.id,
+                "event_date": event_day.event_date,
+                "location_name": event_day.location_name,
+                "breakfast_provided": event_day.breakfast_provided,
+                "lunch_provided": event_day.lunch_provided,
+                "dinner_provided": event_day.dinner_provided,
+                "daily_notes": event_day.daily_notes,
+                
+                # User Preferences for this day
+                "preference_id": preference.id,
+                "staying_with_yatra": preference.staying_with_yatra,
+                "dinner_at_host": preference.dinner_at_host,
+                "breakfast_at_host": preference.breakfast_at_host,
+                "lunch_with_yatra": preference.lunch_with_yatra,
+                "physical_limitations": preference.physical_limitations,
+                "toilet_preference": preference.toilet_preference,
+                
+                # Timestamps
+                "created_at": preference.created_at,
+                "updated_at": preference.updated_at
+            }
+            daily_schedule.append(schedule_item)
+    
+    # Create response with merged daily schedule
+    response_data = {
+        "registration_id": registration.id,
+        "event_id": registration.event_id,
+        "registration_type": registration.registration_type,
+        "transportation_mode": registration.transportation_mode,
+        "has_empty_seats": registration.has_empty_seats,
+        "available_seats_count": registration.available_seats_count,
+        "notes": registration.notes,
+        "created_at": registration.created_at,
+        "updated_at": registration.updated_at,
+        "members": registration.members,
+        "daily_schedule": daily_schedule
+    }
+    
+    return response_data
