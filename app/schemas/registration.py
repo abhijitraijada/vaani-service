@@ -102,6 +102,44 @@ class RegistrationMemberResponse(RegistrationMemberCreate):
         from_attributes = True
 
 
+class RegistrationMemberUpdate(BaseModel):
+    """Schema for updating registration member information"""
+    name: Optional[str] = Field(None, min_length=2, max_length=255, description="Member's name")
+    email: Optional[str] = Field(None, description="Member's email")
+    city: Optional[str] = Field(None, max_length=100, description="Member's city")
+    age: Optional[int] = Field(None, ge=1, le=120, description="Member's age")
+    language: Optional[str] = Field(None, max_length=50, description="Preferred language")
+    floor_preference: Optional[str] = Field(None, max_length=100, description="Floor preference")
+    special_requirements: Optional[str] = Field(None, description="Special requirements")
+    status: Optional[RegistrationStatus] = Field(None, description="Registration status")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "name": "Updated Name",
+                "email": "updated@example.com",
+                "city": "Updated City",
+                "age": 30,
+                "language": "English",
+                "floor_preference": "Ground floor",
+                "special_requirements": "Updated requirements",
+                "status": "confirmed"
+            }
+        }
+
+
+class RegistrationMemberStatusUpdate(BaseModel):
+    """Schema for updating only the registration status"""
+    status: RegistrationStatus = Field(..., description="New registration status")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "status": "confirmed"
+            }
+        }
+
+
 class RegistrationCreate(BaseModel):
     event_id: str
     registration_type: RegistrationType

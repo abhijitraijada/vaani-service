@@ -11,10 +11,16 @@ from app.models.daily_preference import DailyPreference
 from app.models.event import Event
 from app.schemas.registration import (
     RegistrationCreate,
-    RegistrationResponse
+    RegistrationResponse,
+    RegistrationMemberUpdate,
+    RegistrationMemberStatusUpdate,
+    RegistrationMemberResponse
 )
 from app.schemas.enums import RegistrationType, RegistrationStatus
 from app.schemas.participant_search import ParticipantSearchResponse
+from app.services.registration_member import RegistrationMemberService
+from app.utils.auth import get_current_active_user
+from app.schemas.user import UserResponse
 
 router = APIRouter(prefix="/registrations", tags=["Registrations"])
 
@@ -240,3 +246,114 @@ async def search_participant_by_phone(
     }
     
     return response_data
+
+
+@router.put("/members/{member_id}", response_model=RegistrationMemberResponse, status_code=status.HTTP_200_OK)
+async def update_registration_member(
+    member_id: str,
+    update_data: RegistrationMemberUpdate,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_active_user)
+):
+    """
+    Update registration member information (Requires Authentication).
+    
+    This endpoint allows updating various fields of a registration member including
+    personal information and registration status.
+    
+    Args:
+        member_id: The ID of the registration member to update
+        update_data: Member information to update (all fields optional)
+        current_user: Current authenticated user (from JWT token)
+        
+    Returns:
+        RegistrationMemberResponse: Updated member information
+        
+    Raises:
+        401: If authentication token is invalid or missing
+        404: If member is not found
+        500: If internal server error occurs
+    """
+    return RegistrationMemberService.update_member(db, member_id, update_data)
+
+
+@router.put("/members/{member_id}/status", response_model=RegistrationMemberResponse, status_code=status.HTTP_200_OK)
+async def update_member_status(
+    member_id: str,
+    status_data: RegistrationMemberStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_active_user)
+):
+    """
+    Update registration member status only (Requires Authentication).
+    
+    This endpoint allows updating only the registration status of a member.
+    Useful for confirming registrations, moving from waiting to confirmed, etc.
+    
+    Args:
+        member_id: The ID of the registration member to update
+        status_data: New status information
+        current_user: Current authenticated user (from JWT token)
+        
+    Returns:
+        RegistrationMemberResponse: Updated member information
+        
+    Raises:
+        401: If authentication token is invalid or missing
+        404: If member is not found
+        500: If internal server error occurs
+    """
+    return RegistrationMemberService.update_member_status(db, member_id, status_data)
+
+
+@router.get("/members/registration/{registration_id}", response_model=List[RegistrationMemberResponse], status_code=status.HTTP_200_OK)
+async def get_registration_members(
+    registration_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_active_user)
+):
+    """
+    Get all members for a specific registration (Requires Authentication).
+    
+    This endpoint retrieves all registration members belonging to a specific registration.
+    
+    Args:
+        registration_id: The ID of the registration to get members for
+        current_user: Current authenticated user (from JWT token)
+        
+    Returns:
+        List[RegistrationMemberResponse]: List of members for the registration
+        
+    Raises:
+        401: If authentication token is invalid or missing
+        500: If internal server error occurs
+    """
+    return RegistrationMemberService.get_members_by_registration(db, registration_id)
+
+
+@router.get("/members/status/{status}", response_model=List[RegistrationMemberResponse], status_code=status.HTTP_200_OK)
+async def get_members_by_status(
+    status: RegistrationStatus,
+    event_id: str = None,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_active_user)
+):
+    """
+    Get all members with a specific status (Requires Authentication).
+    
+    This endpoint retrieves all registration members with a specific status,
+    optionally filtered by event.
+    
+    Args:
+        status: The registration status to filter by (registered, waiting, confirmed, cancelled)
+        event_id: Optional event ID to filter members by event
+        current_user: Current authenticated user (from JWT token)
+        
+    Returns:
+        List[RegistrationMemberResponse]: List of members with the specified status
+        
+    Raises:
+        401: If authentication token is invalid or missing
+        500: If internal server error occurs
+    """
+    return RegistrationMemberService.get_members_by_status(db, status, event_id)
