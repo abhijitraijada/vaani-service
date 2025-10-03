@@ -25,5 +25,6 @@ class EventDay(Base):
 
     # Relationships
     event = relationship("Event", back_populates="event_days")
+    hosts = relationship("Host", back_populates="event_day")
     host_assignments = relationship("HostAssignment", back_populates="event_day")
     daily_preferences = relationship("DailyPreference", back_populates="event_day")

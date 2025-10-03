@@ -8,9 +8,11 @@ from sqlalchemy.exc import IntegrityError
 from fastapi import HTTPException, status, UploadFile
 
 from app.models.host import Host
+from app.models.event_day import EventDay
 from app.schemas.host import (
     HostCreate, HostUpdate, HostResponse, HostCSVRow, 
-    HostCSVUpload, HostDeleteResponse, HostFilterParams, HostListResponse
+    HostCSVUpload, HostDeleteResponse, HostFilterParams, HostListResponse,
+    HostsByEventDayResponse, HostsByEventResponse
 )
 from app.schemas.enums import ToiletFacilities, GenderPreference
 
@@ -19,25 +21,54 @@ class HostService:
     """Service class for host-related operations"""
     
     @staticmethod
+    def _host_to_response(host: Host) -> HostResponse:
+        """Convert Host model to HostResponse with event_date"""
+        response_data = {
+            "id": host.id,
+            "event_id": host.event_id,
+            "event_days_id": host.event_days_id,
+            "event_date": host.event_day.event_date if host.event_day else None,
+            "name": host.name,
+            "phone_no": host.phone_no,
+            "place_name": host.place_name,
+            "max_participants": host.max_participants,
+            "toilet_facilities": host.toilet_facilities,
+            "gender_preference": host.gender_preference,
+            "facilities_description": host.facilities_description,
+            "created_at": host.created_at,
+            "updated_at": host.updated_at
+        }
+        return HostResponse(**response_data)
+    
+    @staticmethod
     def create_host(db: Session, host_data: HostCreate) -> HostResponse:
         """Create a new host"""
         try:
-            # Check if phone number already exists for this event
+            # Validate event_days_id exists
+            event_day = db.query(EventDay).filter(EventDay.id == host_data.event_days_id).first()
+            if not event_day:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid event_days_id provided"
+                )
+            
+            # Check if phone number already exists for this event day
             existing_host = db.query(Host).filter(
-                Host.event_id == host_data.event_id,
+                Host.event_days_id == host_data.event_days_id,
                 Host.phone_no == host_data.phone_no
             ).first()
             
             if existing_host:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Phone number already registered for this event"
+                    detail="Phone number already registered for this event day"
                 )
             
             # Create new host
             db_host = Host(
                 id=str(uuid.uuid4()),
                 event_id=host_data.event_id,
+                event_days_id=host_data.event_days_id,
                 name=host_data.name,
                 phone_no=host_data.phone_no,
                 place_name=host_data.place_name,
@@ -51,7 +82,8 @@ class HostService:
             db.commit()
             db.refresh(db_host)
             
-            return HostResponse.model_validate(db_host)
+            # Convert to response with event_date
+            return HostService._host_to_response(db_host)
             
         except IntegrityError as e:
             db.rollback()
@@ -74,9 +106,56 @@ class HostService:
             )
     
     @staticmethod
+    def get_hosts_grouped_by_event_days(db: Session, event_id: str) -> HostsByEventResponse:
+        """Get hosts grouped by event days for a specific event"""
+        try:
+            # Get all event days for the event
+            event_days = db.query(EventDay).filter(EventDay.event_id == event_id).order_by(EventDay.event_date).all()
+            
+            if not event_days:
+                return HostsByEventResponse(
+                    event_id=event_id,
+                    event_days=[],
+                    total_hosts=0
+                )
+            
+            grouped_hosts = []
+            total_hosts = 0
+            
+            for event_day in event_days:
+                # Get hosts for this event day
+                hosts_query = db.query(Host).join(EventDay, Host.event_days_id == EventDay.id, isouter=True).filter(
+                    Host.event_days_id == event_day.id
+                )
+                
+                hosts = hosts_query.all()
+                host_responses = [HostService._host_to_response(host) for host in hosts]
+                
+                grouped_hosts.append(HostsByEventDayResponse(
+                    event_date=event_day.event_date,
+                    event_day_id=event_day.id,
+                    hosts=host_responses,
+                    total_hosts=len(host_responses)
+                ))
+                
+                total_hosts += len(host_responses)
+            
+            return HostsByEventResponse(
+                event_id=event_id,
+                event_days=grouped_hosts,
+                total_hosts=total_hosts
+            )
+            
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to get hosts grouped by event days: {str(e)}"
+            )
+    
+    @staticmethod
     def get_host_by_id(db: Session, host_id: str) -> Host:
-        """Get host by ID"""
-        host = db.query(Host).filter(Host.id == host_id).first()
+        """Get host by ID with event day information"""
+        host = db.query(Host).join(EventDay, Host.event_days_id == EventDay.id, isouter=True).filter(Host.id == host_id).first()
         if not host:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -95,7 +174,7 @@ class HostService:
             # Check if phone number is being updated and if it conflicts
             if update_data.phone_no is not None and update_data.phone_no != host.phone_no:
                 existing_host = db.query(Host).filter(
-                    Host.event_id == host.event_id,
+                    Host.event_days_id == host.event_days_id,
                     Host.phone_no == update_data.phone_no,
                     Host.id != host_id
                 ).first()
@@ -103,10 +182,22 @@ class HostService:
                 if existing_host:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Phone number already registered for this event"
+                        detail="Phone number already registered for this event day"
+                    )
+            
+            # Validate event_days_id if being updated
+            if update_data.event_days_id is not None:
+                event_day = db.query(EventDay).filter(EventDay.id == update_data.event_days_id).first()
+                if not event_day:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid event_days_id provided"
                     )
             
             # Update fields if provided
+            if update_data.event_days_id is not None:
+                host.event_days_id = update_data.event_days_id
+            
             if update_data.name is not None:
                 host.name = update_data.name
             
@@ -133,7 +224,7 @@ class HostService:
             db.commit()
             db.refresh(host)
             
-            return HostResponse.model_validate(host)
+            return HostService._host_to_response(host)
             
         except HTTPException:
             raise
@@ -181,7 +272,7 @@ class HostService:
         """Validate a single CSV row"""
         try:
             # Check required fields
-            required_fields = ['name', 'phone_no', 'place_name', 'max_participants', 'toilet_facilities', 'gender_preference']
+            required_fields = ['event_days_id', 'name', 'phone_no', 'place_name', 'max_participants', 'toilet_facilities', 'gender_preference']
             for field in required_fields:
                 if field not in row_data or not row_data[field]:
                     return False, f"Row {row_number}: Missing required field '{field}'"
@@ -193,6 +284,11 @@ class HostService:
                     return False, f"Row {row_number}: Phone number must be positive"
             except ValueError:
                 return False, f"Row {row_number}: Invalid phone number format"
+            
+            # Validate event_days_id format (UUID)
+            event_days_id = row_data['event_days_id'].strip()
+            if len(event_days_id) != 36 or event_days_id.count('-') != 4:
+                return False, f"Row {row_number}: Invalid event_days_id format (must be UUID)"
             
             # Validate max participants
             try:
@@ -259,6 +355,7 @@ class HostService:
                 try:
                     host_data = HostCreate(
                         event_id=event_id,
+                        event_days_id=row_data['event_days_id'].strip(),
                         name=row_data['name'].strip(),
                         phone_no=int(row_data['phone_no']),
                         place_name=row_data['place_name'].strip(),
@@ -300,12 +397,15 @@ class HostService:
     ) -> HostListResponse:
         """Get hosts with filters and pagination"""
         try:
-            # Start with base query
-            query = db.query(Host)
+            # Start with base query joining EventDay
+            query = db.query(Host).join(EventDay, Host.event_days_id == EventDay.id, isouter=True)
             
             # Apply filters
             if filters.event_id:
                 query = query.filter(Host.event_id == filters.event_id)
+            
+            if filters.event_days_id:
+                query = query.filter(Host.event_days_id == filters.event_days_id)
             
             if filters.name:
                 query = query.filter(Host.name.ilike(f"%{filters.name}%"))
@@ -348,8 +448,8 @@ class HostService:
             # Apply pagination and get results
             hosts = query.offset(offset).limit(page_size).all()
             
-            # Convert to response objects
-            host_responses = [HostResponse.model_validate(host) for host in hosts]
+            # Convert to response objects with event_date
+            host_responses = [HostService._host_to_response(host) for host in hosts]
             
             return HostListResponse(
                 hosts=host_responses,

@@ -11,6 +11,7 @@ class Host(Base):
 
     id = Column(String(36), primary_key=True, comment='Primary Key')
     event_id = Column(String(36), ForeignKey('event.id'), nullable=True)
+    event_days_id = Column(String(36), ForeignKey('event_days.id'), nullable=True, comment='Event day this host belongs to')
     name = Column(String(255), nullable=True)
     phone_no = Column(BigInteger, nullable=True)
     place_name = Column(String(255), nullable=True, comment='Location/place name')
@@ -42,4 +43,5 @@ class Host(Base):
 
     # Relationships
     event = relationship("Event", back_populates="hosts")
+    event_day = relationship("EventDay", back_populates="hosts")
     assignments = relationship("HostAssignment", back_populates="host")

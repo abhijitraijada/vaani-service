@@ -7,7 +7,7 @@ from app.utils.auth import get_current_active_user
 from app.schemas.user import UserResponse
 from app.schemas.host import (
     HostCreate, HostUpdate, HostResponse, HostCSVUpload, HostDeleteResponse,
-    HostFilterParams, HostListResponse
+    HostFilterParams, HostListResponse, HostsByEventResponse
 )
 from app.services.host import HostService
 
@@ -47,72 +47,30 @@ async def create_host(
     return HostService.create_host(db, host_data)
 
 
-@router.get("/event/{event_id}", response_model=HostListResponse, status_code=status.HTTP_200_OK)
+@router.get("/event/{event_id}", response_model=HostsByEventResponse, status_code=status.HTTP_200_OK)
 async def get_hosts_by_event(
     event_id: str,
-    name: str = None,
-    phone_no: int = None,
-    place_name: str = None,
-    min_capacity: int = None,
-    max_capacity: int = None,
-    toilet_facilities: str = None,
-    gender_preference: str = None,
-    has_facilities_description: bool = None,
-    page: int = 1,
-    page_size: int = 10,
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_active_user)
 ):
     """
-    Get hosts for a specific event with filters and pagination (Requires Authentication).
+    Get hosts for a specific event grouped by event days (Requires Authentication).
     
-    This endpoint retrieves hosts for a specific event with various filtering options 
-    and pagination support. All filter parameters are optional and can be combined.
+    This endpoint retrieves all hosts for a specific event, organized by event days.
+    Each event day contains its own array of hosts with the event date and total count.
     
     Args:
         event_id: The ID of the event to get hosts for (required)
-        name: Filter by host name (partial match, case-insensitive)
-        phone_no: Filter by exact phone number
-        place_name: Filter by place name (partial match, case-insensitive)
-        min_capacity: Minimum capacity filter (inclusive)
-        max_capacity: Maximum capacity filter (inclusive)
-        toilet_facilities: Filter by toilet facilities (indian, western, both)
-        gender_preference: Filter by gender preference (male, female, both)
-        has_facilities_description: Filter hosts with/without facilities description
-        page: Page number (default: 1)
-        page_size: Number of hosts per page (default: 10, max: 100)
         current_user: Current authenticated user (from JWT token)
         
     Returns:
-        HostListResponse: Paginated list of hosts with metadata
+        HostsByEventResponse: Hosts grouped by event days with metadata
         
     Raises:
         401: If authentication token is invalid or missing
-        400: If invalid filter values provided
         500: If internal server error occurs
     """
-    # Validate page_size
-    if page_size > 100:
-        page_size = 100
-    if page_size < 1:
-        page_size = 10
-    if page < 1:
-        page = 1
-    
-    # Create filter parameters (event_id is always required)
-    filters = HostFilterParams(
-        event_id=event_id,
-        name=name,
-        phone_no=phone_no,
-        place_name=place_name,
-        min_capacity=min_capacity,
-        max_capacity=max_capacity,
-        toilet_facilities=toilet_facilities,
-        gender_preference=gender_preference,
-        has_facilities_description=has_facilities_description
-    )
-    
-    return HostService.get_hosts_with_filters(db, filters, page, page_size)
+    return HostService.get_hosts_grouped_by_event_days(db, event_id)
 
 
 @router.get("/{host_id}", response_model=HostResponse, status_code=status.HTTP_200_OK)
@@ -139,7 +97,7 @@ async def get_host(
         500: If internal server error occurs
     """
     host = HostService.get_host_by_id(db, host_id)
-    return HostResponse.model_validate(host)
+    return HostService._host_to_response(host)
 
 
 @router.put("/{host_id}", response_model=HostResponse, status_code=status.HTTP_200_OK)

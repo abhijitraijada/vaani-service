@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional, List
 from pydantic import BaseModel, Field
 from app.schemas.enums import ToiletFacilities, GenderPreference
@@ -7,6 +7,7 @@ from app.schemas.enums import ToiletFacilities, GenderPreference
 class HostCreate(BaseModel):
     """Schema for creating a new host"""
     event_id: str = Field(..., description="Event ID this host belongs to")
+    event_days_id: str = Field(..., description="Event day ID this host belongs to")
     name: str = Field(..., min_length=2, max_length=255, description="Host's name")
     phone_no: int = Field(..., description="Host's phone number")
     place_name: str = Field(..., min_length=2, max_length=255, description="Location/place name")
@@ -19,6 +20,7 @@ class HostCreate(BaseModel):
         json_schema_extra = {
             "example": {
                 "event_id": "123e4567-e89b-12d3-a456-426614174000",
+                "event_days_id": "1df9ffc6-fcf4-4c71-861f-0dc54c96c7a2",
                 "name": "John Smith",
                 "phone_no": 9876543210,
                 "place_name": "Smith Residence, Downtown",
@@ -32,6 +34,7 @@ class HostCreate(BaseModel):
 
 class HostUpdate(BaseModel):
     """Schema for updating host information"""
+    event_days_id: Optional[str] = Field(None, description="Event day ID this host belongs to")
     name: Optional[str] = Field(None, min_length=2, max_length=255, description="Host's name")
     phone_no: Optional[int] = Field(None, description="Host's phone number")
     place_name: Optional[str] = Field(None, min_length=2, max_length=255, description="Location/place name")
@@ -43,6 +46,7 @@ class HostUpdate(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
+                "event_days_id": "cfa43dc7-b86d-4006-aad6-c78d5dff4dce",
                 "name": "Updated Host Name",
                 "phone_no": 9876543211,
                 "place_name": "Updated Location",
@@ -58,6 +62,8 @@ class HostResponse(BaseModel):
     """Schema for host response data"""
     id: str
     event_id: str
+    event_days_id: Optional[str] = None
+    event_date: Optional[date] = None
     name: str
     phone_no: int
     place_name: str
@@ -74,6 +80,8 @@ class HostResponse(BaseModel):
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174000",
                 "event_id": "456e7890-e89b-12d3-a456-426614174001",
+                "event_days_id": "1df9ffc6-fcf4-4c71-861f-0dc54c96c7a2",
+                "event_date": "2024-10-31",
                 "name": "John Smith",
                 "phone_no": 9876543210,
                 "place_name": "Smith Residence, Downtown",
@@ -89,6 +97,7 @@ class HostResponse(BaseModel):
 
 class HostCSVRow(BaseModel):
     """Schema for CSV row validation"""
+    event_days_id: str = Field(..., description="Event day ID this host belongs to")
     name: str = Field(..., min_length=2, max_length=255, description="Host's name")
     phone_no: int = Field(..., description="Host's phone number")
     place_name: str = Field(..., min_length=2, max_length=255, description="Location/place name")
@@ -136,6 +145,7 @@ class HostDeleteResponse(BaseModel):
 class HostFilterParams(BaseModel):
     """Schema for host filtering parameters"""
     event_id: Optional[str] = Field(None, description="Filter by event ID")
+    event_days_id: Optional[str] = Field(None, description="Filter by event day ID")
     name: Optional[str] = Field(None, description="Filter by host name (partial match)")
     phone_no: Optional[int] = Field(None, description="Filter by exact phone number")
     place_name: Optional[str] = Field(None, description="Filter by place name (partial match)")
@@ -149,12 +159,76 @@ class HostFilterParams(BaseModel):
         json_schema_extra = {
             "example": {
                 "event_id": "123e4567-e89b-12d3-a456-426614174000",
+                "event_days_id": "1df9ffc6-fcf4-4c71-861f-0dc54c96c7a2",
                 "name": "John",
                 "min_capacity": 3,
                 "max_capacity": 10,
                 "toilet_facilities": "both",
                 "gender_preference": "both",
                 "has_facilities_description": True
+            }
+        }
+
+
+class HostsByEventDayResponse(BaseModel):
+    """Schema for hosts grouped by event day"""
+    event_date: date = Field(..., description="Event date")
+    event_day_id: str = Field(..., description="Event day ID")
+    hosts: List[HostResponse] = Field(..., description="List of hosts for this event day")
+    total_hosts: int = Field(..., description="Total number of hosts for this event day")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "event_date": "2024-10-31",
+                "event_day_id": "1df9ffc6-fcf4-4c71-861f-0dc54c96c7a2",
+                "hosts": [
+                    {
+                        "id": "123e4567-e89b-12d3-a456-426614174000",
+                        "event_id": "456e7890-e89b-12d3-a456-426614174001",
+                        "event_days_id": "1df9ffc6-fcf4-4c71-861f-0dc54c96c7a2",
+                        "event_date": "2024-10-31",
+                        "name": "John Smith",
+                        "phone_no": 9876543210,
+                        "place_name": "Monpur",
+                        "max_participants": 5,
+                        "toilet_facilities": "both",
+                        "gender_preference": "both",
+                        "facilities_description": "Air conditioning, WiFi, parking available",
+                        "created_at": "2024-01-01T00:00:00Z",
+                        "updated_at": "2024-01-01T00:00:00Z"
+                    }
+                ],
+                "total_hosts": 15
+            }
+        }
+
+
+class HostsByEventResponse(BaseModel):
+    """Schema for hosts grouped by event days"""
+    event_id: str = Field(..., description="Event ID")
+    event_days: List[HostsByEventDayResponse] = Field(..., description="Hosts grouped by event days")
+    total_hosts: int = Field(..., description="Total number of hosts across all event days")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "event_id": "123e4567-e89b-12d3-a456-426614174000",
+                "event_days": [
+                    {
+                        "event_date": "2024-10-31",
+                        "event_day_id": "1df9ffc6-fcf4-4c71-861f-0dc54c96c7a2",
+                        "hosts": [],
+                        "total_hosts": 15
+                    },
+                    {
+                        "event_date": "2024-11-01",
+                        "event_day_id": "cfa43dc7-b86d-4006-aad6-c78d5dff4dce",
+                        "hosts": [],
+                        "total_hosts": 12
+                    }
+                ],
+                "total_hosts": 27
             }
         }
 
@@ -174,6 +248,8 @@ class HostListResponse(BaseModel):
                     {
                         "id": "123e4567-e89b-12d3-a456-426614174000",
                         "event_id": "456e7890-e89b-12d3-a456-426614174001",
+                        "event_days_id": "1df9ffc6-fcf4-4c71-861f-0dc54c96c7a2",
+                        "event_date": "2024-10-31",
                         "name": "John Smith",
                         "phone_no": 9876543210,
                         "place_name": "Smith Residence, Downtown",
