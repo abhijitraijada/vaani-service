@@ -1,7 +1,38 @@
 from datetime import datetime, date
 from typing import Optional, List
 from pydantic import BaseModel, Field
-from app.schemas.enums import ToiletFacilities, GenderPreference
+from app.schemas.enums import ToiletFacilities, GenderPreference, Gender
+
+
+class ParticipantSummary(BaseModel):
+    """Lightweight participant data for host responses"""
+    id: str = Field(..., description="Participant ID")
+    assignment_id: str = Field(..., description="Host assignment ID")
+    name: str = Field(..., description="Participant name")
+    phone_number: str = Field(..., description="Participant phone number")
+    age: Optional[int] = Field(None, description="Participant age")
+    gender: Optional[Gender] = Field(None, description="Participant gender")
+    city: Optional[str] = Field(None, description="Participant city")
+    special_requirements: Optional[str] = Field(None, description="Special requirements")
+    assignment_notes: Optional[str] = Field(None, description="Assignment-specific notes")
+    assigned_at: datetime = Field(..., description="When participant was assigned to host")
+    
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "id": "456e7890-e89b-12d3-a456-426614174001",
+                "assignment_id": "789e0123-e89b-12d3-a456-426614174002",
+                "name": "Rajesh Kumar",
+                "phone_number": "9876543210",
+                "age": 35,
+                "gender": "M",
+                "city": "Ahmedabad",
+                "special_requirements": "Vegetarian meals",
+                "assignment_notes": "Ground floor preference",
+                "assigned_at": "2024-01-15T10:30:00Z"
+            }
+        }
 
 
 class HostCreate(BaseModel):
@@ -71,6 +102,9 @@ class HostResponse(BaseModel):
     toilet_facilities: ToiletFacilities
     gender_preference: GenderPreference
     facilities_description: Optional[str] = None
+    assigned_participants: List[ParticipantSummary] = Field(default_factory=list, description="List of assigned participants")
+    current_capacity: int = Field(..., description="Current number of assigned participants")
+    available_capacity: int = Field(..., description="Available capacity (max_participants - current_capacity)")
     created_at: datetime
     updated_at: datetime
 
@@ -89,6 +123,22 @@ class HostResponse(BaseModel):
                 "toilet_facilities": "both",
                 "gender_preference": "both",
                 "facilities_description": "Air conditioning, WiFi, parking available",
+                "assigned_participants": [
+                    {
+                        "id": "456e7890-e89b-12d3-a456-426614174001",
+                        "assignment_id": "789e0123-e89b-12d3-a456-426614174002",
+                        "name": "Rajesh Kumar",
+                        "phone_number": "9876543210",
+                        "age": 35,
+                        "gender": "M",
+                        "city": "Ahmedabad",
+                        "special_requirements": "Vegetarian meals",
+                        "assignment_notes": "Ground floor preference",
+                        "assigned_at": "2024-01-15T10:30:00Z"
+                    }
+                ],
+                "current_capacity": 1,
+                "available_capacity": 4,
                 "created_at": "2024-01-01T00:00:00Z",
                 "updated_at": "2024-01-01T00:00:00Z"
             }

@@ -96,8 +96,8 @@ async def get_host(
         404: If host is not found
         500: If internal server error occurs
     """
-    host = HostService.get_host_by_id(db, host_id)
-    return HostService._host_to_response(host)
+    host = HostService.get_host_by_id_with_participants(db, host_id)
+    return host
 
 
 @router.put("/{host_id}", response_model=HostResponse, status_code=status.HTTP_200_OK)

@@ -6,7 +6,8 @@ from app.utils.auth import get_current_active_user
 from app.schemas.user import UserResponse
 from app.schemas.host_assignment import (
     HostAssignmentCreate, HostAssignmentUpdate, HostAssignmentResponse,
-    HostAssignmentFilterParams, HostAssignmentListResponse, HostAssignmentDeleteResponse
+    HostAssignmentFilterParams, HostAssignmentListResponse, HostAssignmentDeleteResponse,
+    BulkHostAssignmentCreate, BulkHostAssignmentResponse
 )
 from app.services.host_assignment import HostAssignmentService
 
@@ -40,6 +41,36 @@ async def create_host_assignment(
         500: If internal server error occurs
     """
     return HostAssignmentService.create_assignment(db, assignment_data, current_user.id)
+
+
+@router.post("/bulk", response_model=BulkHostAssignmentResponse, status_code=status.HTTP_201_CREATED)
+async def create_bulk_host_assignments(
+    bulk_data: BulkHostAssignmentCreate,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_active_user)
+):
+    """
+    Create multiple host assignments in one request (Requires Authentication).
+    
+    This endpoint creates multiple assignments of registration members to a host 
+    for a specific event day in a single API call. This is more efficient than 
+    creating individual assignments.
+    
+    Args:
+        bulk_data: Bulk assignment data including host_id, list of registration_member_ids, 
+                  event_day_id, and optional assignment_notes (applied to all assignments)
+        current_user: Current authenticated user (from JWT token)
+        
+    Returns:
+        BulkHostAssignmentResponse: Results including successful/failed counts and error messages
+        
+    Raises:
+        401: If authentication token is invalid or missing
+        404: If host, event day, or any registration member not found
+        400: If host capacity exceeded or validation fails
+        500: If internal server error occurs
+    """
+    return HostAssignmentService.create_bulk_assignments(db, bulk_data, current_user.id)
 
 
 @router.get("/", response_model=HostAssignmentListResponse, status_code=status.HTTP_200_OK)

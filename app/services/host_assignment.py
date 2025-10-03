@@ -11,7 +11,8 @@ from app.models.registration_member import RegistrationMember
 from app.models.event_day import EventDay
 from app.schemas.host_assignment import (
     HostAssignmentCreate, HostAssignmentUpdate, HostAssignmentResponse, 
-    HostAssignmentFilterParams, HostAssignmentListResponse, HostAssignmentDeleteResponse
+    HostAssignmentFilterParams, HostAssignmentListResponse, HostAssignmentDeleteResponse,
+    BulkHostAssignmentCreate, BulkHostAssignmentResponse
 )
 
 
@@ -87,6 +88,114 @@ class HostAssignmentService:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Internal server error: {str(e)}"
+            )
+    
+    @staticmethod
+    def create_bulk_assignments(db: Session, bulk_data: BulkHostAssignmentCreate, assigned_by: str) -> BulkHostAssignmentResponse:
+        """Create multiple host assignments in one request"""
+        try:
+            # Validate that host exists
+            host = db.query(Host).filter(Host.id == bulk_data.host_id).first()
+            if not host:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Host not found"
+                )
+            
+            # Validate that event day exists
+            event_day = db.query(EventDay).filter(EventDay.id == bulk_data.event_day_id).first()
+            if not event_day:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Event day not found"
+                )
+            
+            # Check host capacity
+            current_assignments = db.query(HostAssignment).filter(
+                HostAssignment.host_id == bulk_data.host_id,
+                HostAssignment.event_day_id == bulk_data.event_day_id
+            ).count()
+            
+            if current_assignments + len(bulk_data.registration_member_ids) > host.max_participants:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Host capacity exceeded. Current: {current_assignments}, Requested: {len(bulk_data.registration_member_ids)}, Max: {host.max_participants}"
+                )
+            
+            # Validate all registration members exist
+            existing_members = db.query(RegistrationMember).filter(
+                RegistrationMember.id.in_(bulk_data.registration_member_ids)
+            ).all()
+            existing_member_ids = {member.id for member in existing_members}
+            
+            missing_members = set(bulk_data.registration_member_ids) - existing_member_ids
+            if missing_members:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Registration members not found: {list(missing_members)}"
+                )
+            
+            # Check for existing assignments
+            existing_assignments = db.query(HostAssignment).filter(
+                HostAssignment.registration_member_id.in_(bulk_data.registration_member_ids),
+                HostAssignment.event_day_id == bulk_data.event_day_id
+            ).all()
+            
+            existing_assignment_member_ids = {assignment.registration_member_id for assignment in existing_assignments}
+            
+            # Process assignments
+            successful_assignments = []
+            errors = []
+            
+            for member_id in bulk_data.registration_member_ids:
+                try:
+                    if member_id in existing_assignment_member_ids:
+                        errors.append(f"Registration member {member_id} already has assignment for this event day")
+                        continue
+                    
+                    # Create assignment
+                    assignment = HostAssignment(
+                        id=str(uuid.uuid4()),
+                        host_id=bulk_data.host_id,
+                        registration_member_id=member_id,
+                        event_day_id=bulk_data.event_day_id,
+                        assignment_notes=bulk_data.assignment_notes,
+                        assigned_by=assigned_by
+                    )
+                    
+                    db.add(assignment)
+                    successful_assignments.append(assignment)
+                    
+                except Exception as e:
+                    errors.append(f"Failed to create assignment for member {member_id}: {str(e)}")
+            
+            # Commit all successful assignments
+            if successful_assignments:
+                db.commit()
+                
+                # Refresh assignments to get IDs
+                for assignment in successful_assignments:
+                    db.refresh(assignment)
+            
+            # Convert to response objects
+            assignment_responses = [HostAssignmentResponse.model_validate(assignment) for assignment in successful_assignments]
+            
+            return BulkHostAssignmentResponse(
+                total_requested=len(bulk_data.registration_member_ids),
+                successful_assignments=len(successful_assignments),
+                failed_assignments=len(errors),
+                assignments=assignment_responses,
+                errors=errors
+            )
+            
+        except HTTPException:
+            db.rollback()
+            raise
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to create bulk assignments: {str(e)}"
             )
     
     @staticmethod

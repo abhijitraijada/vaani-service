@@ -9,16 +9,58 @@ from fastapi import HTTPException, status, UploadFile
 
 from app.models.host import Host
 from app.models.event_day import EventDay
+from app.models.host_assignment import HostAssignment
+from app.models.registration_member import RegistrationMember
 from app.schemas.host import (
     HostCreate, HostUpdate, HostResponse, HostCSVRow, 
     HostCSVUpload, HostDeleteResponse, HostFilterParams, HostListResponse,
-    HostsByEventDayResponse, HostsByEventResponse
+    HostsByEventDayResponse, HostsByEventResponse, ParticipantSummary
 )
 from app.schemas.enums import ToiletFacilities, GenderPreference
 
 
 class HostService:
     """Service class for host-related operations"""
+    
+    @staticmethod
+    def _host_to_response_with_participants(host_data: dict, participants: List[dict]) -> HostResponse:
+        """Convert host data and participants to HostResponse"""
+        current_capacity = len(participants)
+        available_capacity = host_data['max_participants'] - current_capacity
+        
+        participant_summaries = [
+            ParticipantSummary(
+                id=participant['id'],
+                assignment_id=participant['assignment_id'],
+                name=participant['name'],
+                phone_number=participant['phone_number'],
+                age=participant['age'],
+                gender=participant['gender'],
+                city=participant['city'],
+                special_requirements=participant['special_requirements'],
+                assignment_notes=participant['assignment_notes'],
+                assigned_at=participant['assigned_at']
+            ) for participant in participants
+        ]
+        
+        return HostResponse(
+            id=host_data['id'],
+            event_id=host_data['event_id'],
+            event_days_id=host_data['event_days_id'],
+            event_date=host_data['event_date'],
+            name=host_data['name'],
+            phone_no=host_data['phone_no'],
+            place_name=host_data['place_name'],
+            max_participants=host_data['max_participants'],
+            toilet_facilities=host_data['toilet_facilities'],
+            gender_preference=host_data['gender_preference'],
+            facilities_description=host_data['facilities_description'],
+            assigned_participants=participant_summaries,
+            current_capacity=current_capacity,
+            available_capacity=available_capacity,
+            created_at=host_data['created_at'],
+            updated_at=host_data['updated_at']
+        )
     
     @staticmethod
     def _host_to_response(host: Host) -> HostResponse:
@@ -107,7 +149,7 @@ class HostService:
     
     @staticmethod
     def get_hosts_grouped_by_event_days(db: Session, event_id: str) -> HostsByEventResponse:
-        """Get hosts grouped by event days for a specific event"""
+        """Get hosts grouped by event days for a specific event with assigned participants"""
         try:
             # Get all event days for the event
             event_days = db.query(EventDay).filter(EventDay.event_id == event_id).order_by(EventDay.event_date).all()
@@ -123,13 +165,81 @@ class HostService:
             total_hosts = 0
             
             for event_day in event_days:
-                # Get hosts for this event day
-                hosts_query = db.query(Host).join(EventDay, Host.event_days_id == EventDay.id, isouter=True).filter(
-                    Host.event_days_id == event_day.id
-                )
+                # Single optimized query with JOINs to get hosts and their participants
+                results = db.query(
+                    Host.id,
+                    Host.event_id,
+                    Host.event_days_id,
+                    EventDay.event_date,
+                    Host.name,
+                    Host.phone_no,
+                    Host.place_name,
+                    Host.max_participants,
+                    Host.toilet_facilities,
+                    Host.gender_preference,
+                    Host.facilities_description,
+                    Host.created_at,
+                    Host.updated_at,
+                    RegistrationMember.id.label('participant_id'),
+                    HostAssignment.id.label('assignment_id'),
+                    RegistrationMember.name.label('participant_name'),
+                    RegistrationMember.phone_number.label('participant_phone'),
+                    RegistrationMember.age.label('participant_age'),
+                    RegistrationMember.gender.label('participant_gender'),
+                    RegistrationMember.city.label('participant_city'),
+                    RegistrationMember.special_requirements.label('participant_requirements'),
+                    HostAssignment.assignment_notes,
+                    HostAssignment.created_at.label('assigned_at')
+                ).join(EventDay, Host.event_days_id == EventDay.id)\
+                .outerjoin(HostAssignment, Host.id == HostAssignment.host_id)\
+                .outerjoin(RegistrationMember, HostAssignment.registration_member_id == RegistrationMember.id)\
+                .filter(Host.event_days_id == event_day.id)\
+                .all()
                 
-                hosts = hosts_query.all()
-                host_responses = [HostService._host_to_response(host) for host in hosts]
+                # Group results by host
+                hosts_dict = {}
+                for row in results:
+                    host_id = row.id
+                    if host_id not in hosts_dict:
+                        hosts_dict[host_id] = {
+                            'id': row.id,
+                            'event_id': row.event_id,
+                            'event_days_id': row.event_days_id,
+                            'event_date': row.event_date,
+                            'name': row.name,
+                            'phone_no': row.phone_no,
+                            'place_name': row.place_name,
+                            'max_participants': row.max_participants,
+                            'toilet_facilities': row.toilet_facilities,
+                            'gender_preference': row.gender_preference,
+                            'facilities_description': row.facilities_description,
+                            'created_at': row.created_at,
+                            'updated_at': row.updated_at,
+                            'participants': []
+                        }
+                    
+                    # Add participant if exists
+                    if row.participant_id:
+                        hosts_dict[host_id]['participants'].append({
+                            'id': row.participant_id,
+                            'assignment_id': row.assignment_id,
+                            'name': row.participant_name,
+                            'phone_number': row.participant_phone,
+                            'age': row.participant_age,
+                            'gender': row.participant_gender,
+                            'city': row.participant_city,
+                            'special_requirements': row.participant_requirements,
+                            'assignment_notes': row.assignment_notes,
+                            'assigned_at': row.assigned_at
+                        })
+                
+                # Convert to HostResponse objects
+                host_responses = []
+                for host_data in hosts_dict.values():
+                    host_response = HostService._host_to_response_with_participants(
+                        host_data, host_data['participants']
+                    )
+                    host_responses.append(host_response)
                 
                 grouped_hosts.append(HostsByEventDayResponse(
                     event_date=event_day.event_date,
@@ -150,6 +260,94 @@ class HostService:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to get hosts grouped by event days: {str(e)}"
+            )
+    
+    @staticmethod
+    def get_host_by_id_with_participants(db: Session, host_id: str) -> HostResponse:
+        """Get host by ID with assigned participants"""
+        try:
+            # Single optimized query with JOINs
+            results = db.query(
+                Host.id,
+                Host.event_id,
+                Host.event_days_id,
+                EventDay.event_date,
+                Host.name,
+                Host.phone_no,
+                Host.place_name,
+                Host.max_participants,
+                Host.toilet_facilities,
+                Host.gender_preference,
+                Host.facilities_description,
+                Host.created_at,
+                Host.updated_at,
+                RegistrationMember.id.label('participant_id'),
+                HostAssignment.id.label('assignment_id'),
+                RegistrationMember.name.label('participant_name'),
+                RegistrationMember.phone_number.label('participant_phone'),
+                RegistrationMember.age.label('participant_age'),
+                RegistrationMember.gender.label('participant_gender'),
+                RegistrationMember.city.label('participant_city'),
+                RegistrationMember.special_requirements.label('participant_requirements'),
+                HostAssignment.assignment_notes,
+                HostAssignment.created_at.label('assigned_at')
+            ).join(EventDay, Host.event_days_id == EventDay.id)\
+            .outerjoin(HostAssignment, Host.id == HostAssignment.host_id)\
+            .outerjoin(RegistrationMember, HostAssignment.registration_member_id == RegistrationMember.id)\
+            .filter(Host.id == host_id)\
+            .all()
+            
+            if not results:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Host not found"
+                )
+            
+            # Group results by host (should be only one host)
+            host_data = None
+            participants = []
+            
+            for row in results:
+                if host_data is None:
+                    host_data = {
+                        'id': row.id,
+                        'event_id': row.event_id,
+                        'event_days_id': row.event_days_id,
+                        'event_date': row.event_date,
+                        'name': row.name,
+                        'phone_no': row.phone_no,
+                        'place_name': row.place_name,
+                        'max_participants': row.max_participants,
+                        'toilet_facilities': row.toilet_facilities,
+                        'gender_preference': row.gender_preference,
+                        'facilities_description': row.facilities_description,
+                        'created_at': row.created_at,
+                        'updated_at': row.updated_at
+                    }
+                
+                # Add participant if exists
+                if row.participant_id:
+                    participants.append({
+                        'id': row.participant_id,
+                        'assignment_id': row.assignment_id,
+                        'name': row.participant_name,
+                        'phone_number': row.participant_phone,
+                        'age': row.participant_age,
+                        'gender': row.participant_gender,
+                        'city': row.participant_city,
+                        'special_requirements': row.participant_requirements,
+                        'assignment_notes': row.assignment_notes,
+                        'assigned_at': row.assigned_at
+                    })
+            
+            return HostService._host_to_response_with_participants(host_data, participants)
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to get host with participants: {str(e)}"
             )
     
     @staticmethod

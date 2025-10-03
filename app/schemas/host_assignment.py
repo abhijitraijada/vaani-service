@@ -21,6 +21,28 @@ class HostAssignmentCreate(BaseModel):
         }
 
 
+class BulkHostAssignmentCreate(BaseModel):
+    """Schema for creating multiple host assignments in one request"""
+    host_id: str = Field(..., description="ID of the host")
+    registration_member_ids: List[str] = Field(..., min_items=1, description="List of registration member IDs")
+    event_day_id: str = Field(..., description="ID of the event day")
+    assignment_notes: Optional[str] = Field(None, description="Assignment notes (applied to all assignments)")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "host_id": "123e4567-e89b-12d3-a456-426614174000",
+                "registration_member_ids": [
+                    "456e7890-e89b-12d3-a456-426614174001",
+                    "789e0123-e89b-12d3-a456-426614174002",
+                    "012e3456-e89b-12d3-a456-426614174003"
+                ],
+                "event_day_id": "789e0123-e89b-12d3-a456-426614174002",
+                "assignment_notes": "All vegetarian meals"
+            }
+        }
+
+
 class HostAssignmentUpdate(BaseModel):
     """Schema for updating host assignment information"""
     assignment_notes: Optional[str] = Field(None, description="Assignment notes")
@@ -56,6 +78,39 @@ class HostAssignmentResponse(BaseModel):
                 "assigned_by": "345e6789-e89b-12d3-a456-426614174004",
                 "created_at": "2024-01-01T00:00:00Z",
                 "updated_at": "2024-01-01T00:00:00Z"
+            }
+        }
+
+
+class BulkHostAssignmentResponse(BaseModel):
+    """Schema for bulk host assignment response"""
+    total_requested: int = Field(..., description="Total number of assignments requested")
+    successful_assignments: int = Field(..., description="Number of successfully created assignments")
+    failed_assignments: int = Field(..., description="Number of failed assignments")
+    assignments: List[HostAssignmentResponse] = Field(..., description="List of created assignments")
+    errors: List[str] = Field(..., description="List of error messages for failed assignments")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "total_requested": 3,
+                "successful_assignments": 2,
+                "failed_assignments": 1,
+                "assignments": [
+                    {
+                        "id": "123e4567-e89b-12d3-a456-426614174000",
+                        "host_id": "456e7890-e89b-12d3-a456-426614174001",
+                        "registration_member_id": "789e0123-e89b-12d3-a456-426614174002",
+                        "event_day_id": "012e3456-e89b-12d3-a456-426614174003",
+                        "assignment_notes": "All vegetarian meals",
+                        "assigned_by": "345e6789-e89b-12d3-a456-426614174004",
+                        "created_at": "2024-01-01T00:00:00Z",
+                        "updated_at": "2024-01-01T00:00:00Z"
+                    }
+                ],
+                "errors": [
+                    "Registration member 012e3456-e89b-12d3-a456-426614174003 already has assignment for this event day"
+                ]
             }
         }
 
