@@ -203,7 +203,7 @@ async def delete_host(
 @router.post("/upload-csv/{event_id}", response_model=HostCSVUpload, status_code=status.HTTP_200_OK)
 async def upload_hosts_csv(
     event_id: str,
-    csv_file: UploadFile = File(...),
+    file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_active_user)
 ):
@@ -218,13 +218,13 @@ async def upload_hosts_csv(
     - phone_no: Host's phone number (required, numeric)
     - place_name: Location/place name (required)
     - max_participants: Maximum participants capacity (required, positive integer)
-    - toilet_facilities: Available toilet facilities (required, one of: indian, western, both)
-    - gender_preference: Gender preference for participants (required, one of: male, female, both)
+    - toilet_facilities: Available toilet facilities (required, one of: indian, western, both - case insensitive)
+    - gender_preference: Gender preference for participants (required, one of: male, female, both - case insensitive)
     - facilities_description: Additional facilities description (optional)
     
     Args:
         event_id: The ID of the event to add hosts to
-        csv_file: CSV file containing host data
+        file: CSV file containing host data
         current_user: Current authenticated user (from JWT token)
         
     Returns:
@@ -236,10 +236,10 @@ async def upload_hosts_csv(
         500: If internal server error occurs
     """
     # Validate file type
-    if not csv_file.filename.endswith('.csv'):
+    if not file.filename.endswith('.csv'):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="File must be a CSV file"
         )
     
-    return HostService.upload_hosts_csv(db, event_id, csv_file)
+    return HostService.upload_hosts_csv(db, event_id, file)
