@@ -110,8 +110,8 @@ async def get_host_assignments(
         500: If internal server error occurs
     """
     # Validate page_size
-    if page_size > 100:
-        page_size = 100
+    if page_size > 5000:
+        page_size = 5000
     if page_size < 1:
         page_size = 10
     if page < 1:
