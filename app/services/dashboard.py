@@ -9,6 +9,8 @@ from app.models.registration import Registration
 from app.models.registration_member import RegistrationMember
 from app.models.daily_preference import DailyPreference
 from app.models.event_day import EventDay
+from app.models.host_assignment import HostAssignment
+from app.models.host import Host
 from app.schemas.dashboard import (
     EventDashboardResponse, RegistrationGroupInfo, RegistrationMemberInfo,
     DailyPreferenceInfo, DailyScheduleItem, DashboardSummary, ParticipantWithPreferences
@@ -29,12 +31,19 @@ class DashboardService:
                 EventDay,
                 Registration,
                 RegistrationMember,
-                DailyPreference
+                DailyPreference,
+                HostAssignment,
+                Host
             )\
             .outerjoin(EventDay, Event.id == EventDay.event_id)\
             .outerjoin(Registration, Event.id == Registration.event_id)\
             .outerjoin(RegistrationMember, Registration.id == RegistrationMember.registration_id)\
             .outerjoin(DailyPreference, Registration.id == DailyPreference.registration_id)\
+            .outerjoin(HostAssignment, and_(
+                RegistrationMember.id == HostAssignment.registration_member_id,
+                EventDay.id == HostAssignment.event_day_id
+            ))\
+            .outerjoin(Host, HostAssignment.host_id == Host.id)\
             .filter(Event.id == event_id)\
             .order_by(EventDay.event_date, Registration.id, RegistrationMember.id)
             
@@ -54,9 +63,10 @@ class DashboardService:
             registrations_dict = {}
             members_dict = {}
             preferences_dict = {}
+            host_assignments_dict = {}
             
             for row in results:
-                event_obj, event_day, registration, member, preference = row
+                event_obj, event_day, registration, member, preference, host_assignment, host = row
                 
                 # Collect event days
                 if event_day and event_day.id not in event_days_dict:
@@ -81,6 +91,21 @@ class DashboardService:
                     preferences_dict[preference.id] = preference
                     if registration:
                         registrations_dict[registration.id]['preferences'].append(preference)
+                
+                # Collect host assignments
+                if host_assignment and host_assignment.id not in host_assignments_dict:
+                    host_assignments_dict[host_assignment.id] = {
+                        'assignment': host_assignment,
+                        'host': host
+                    }
+            
+            # Create mapping for host assignments by member_id and event_day_id
+            member_host_mapping = {}
+            for assignment_data in host_assignments_dict.values():
+                assignment = assignment_data['assignment']
+                host = assignment_data['host']
+                key = f"{assignment.registration_member_id}_{assignment.event_day_id}"
+                member_host_mapping[key] = host
             
             # Count participants for statistics
             total_participants = 0
@@ -120,6 +145,10 @@ class DashboardService:
                             member_preference = pref
                             break
                         
+                        # Find host assignment for this member and event day using efficient mapping
+                        member_host_key = f"{member.id}_{event_day.id}"
+                        member_host = member_host_mapping.get(member_host_key)
+                        
                         # Create participant with all details
                         participant = ParticipantWithPreferences(
                             # Member details
@@ -151,7 +180,13 @@ class DashboardService:
                             transportation_mode=registration.transportation_mode,
                             has_empty_seats=registration.has_empty_seats,
                             available_seats_count=registration.available_seats_count,
-                            notes=registration.notes
+                            notes=registration.notes,
+                            
+                            # Host assignment details (if assigned)
+                            host_id=member_host.id if member_host else None,
+                            host_name=member_host.name if member_host else None,
+                            host_place_name=member_host.place_name if member_host else None,
+                            host_phone_no=member_host.phone_no if member_host else None
                         )
                         day_participants.append(participant)
                 

@@ -111,6 +111,12 @@ class ParticipantWithPreferences(BaseModel):
     has_empty_seats: Optional[bool] = False
     available_seats_count: Optional[int] = 0
     notes: Optional[str] = None
+    
+    # Host assignment details (if assigned)
+    host_id: Optional[str] = None
+    host_name: Optional[str] = None
+    host_place_name: Optional[str] = None
+    host_phone_no: Optional[int] = None
 
     class Config:
         from_attributes = True
