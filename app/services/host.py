@@ -94,17 +94,6 @@ class HostService:
                     detail="Invalid event_days_id provided"
                 )
             
-            # Check if phone number already exists for this event day
-            existing_host = db.query(Host).filter(
-                Host.event_days_id == host_data.event_days_id,
-                Host.phone_no == host_data.phone_no
-            ).first()
-            
-            if existing_host:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Phone number already registered for this event day"
-                )
             
             # Create new host
             db_host = Host(
