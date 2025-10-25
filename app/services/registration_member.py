@@ -106,6 +106,14 @@ class RegistrationMemberService:
                     detail="Registration member not found"
                 )
             
+            # If status is changed to CANCELLED, delete all host assignments for this member
+            if status_data.status == StatusEnum.CANCELLED:
+                from app.models.host_assignment import HostAssignment
+                # Delete all host assignments for this member across all event days
+                db.query(HostAssignment).filter(
+                    HostAssignment.registration_member_id == member_id
+                ).delete(synchronize_session=False)
+            
             db.commit()
             
             # Single SELECT query to get updated member
