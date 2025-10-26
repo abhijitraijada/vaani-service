@@ -20,7 +20,7 @@ class UserService:
     # JWT Configuration
     SECRET_KEY = "your-secret-key-change-in-production"  # In production, use environment variable
     ALGORITHM = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES = 300  # 5 hours
     
     @staticmethod
     def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
