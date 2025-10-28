@@ -10,6 +10,17 @@ from app.schemas.enums import (
 )
 
 
+class HostAssignmentInfo(BaseModel):
+    """Host assignment information for a specific event day"""
+    event_day_id: str
+    host_name: Optional[str] = None
+    host_phone: Optional[str] = None
+    host_location: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 class RegistrationMemberResponse(BaseModel):
     id: str
     registration_id: int
@@ -25,6 +36,7 @@ class RegistrationMemberResponse(BaseModel):
     status: RegistrationStatus
     created_at: datetime
     updated_at: datetime
+    host_assignments: List[HostAssignmentInfo] = []
 
     class Config:
         from_attributes = True

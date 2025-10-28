@@ -9,6 +9,8 @@ from app.models.registration import Registration
 from app.models.registration_member import RegistrationMember
 from app.models.daily_preference import DailyPreference
 from app.models.event import Event
+from app.models.host_assignment import HostAssignment
+from app.models.host import Host
 from app.schemas.registration import (
     RegistrationCreate,
     RegistrationResponse,
@@ -17,7 +19,7 @@ from app.schemas.registration import (
     RegistrationMemberResponse
 )
 from app.schemas.enums import RegistrationType, RegistrationStatus
-from app.schemas.participant_search import ParticipantSearchResponse
+from app.schemas.participant_search import ParticipantSearchResponse, HostAssignmentInfo
 from app.services.registration_member import RegistrationMemberService
 from app.utils.auth import get_current_active_user
 from app.schemas.user import UserResponse
@@ -184,10 +186,15 @@ async def search_participant_by_phone(
     
     Returns 404 if no participant is found with the given phone number.
     """
-    # Single optimized query with all necessary joins
+    # Single optimized query with all necessary joins (host assignments included)
     registration = db.query(Registration)\
         .options(
-            joinedload(Registration.members),
+            joinedload(Registration.members)
+                .joinedload(RegistrationMember.host_assignments)
+                .joinedload(HostAssignment.host),
+            joinedload(Registration.members)
+                .joinedload(RegistrationMember.host_assignments)
+                .joinedload(HostAssignment.event_day),
             joinedload(Registration.daily_preferences).joinedload(DailyPreference.event_day)
         )\
         .join(RegistrationMember, Registration.id == RegistrationMember.registration_id)\
@@ -230,6 +237,42 @@ async def search_participant_by_phone(
             }
             daily_schedule.append(schedule_item)
     
+    # Build members list with host assignment details
+    members_data = []
+    for member in registration.members:
+        # Build host assignments for this member
+        host_assignments = []
+        if member.status in [RegistrationStatus.REGISTERED, RegistrationStatus.CONFIRMED]:
+            if hasattr(member, 'host_assignments') and member.host_assignments:
+                for assignment in member.host_assignments:
+                    if assignment.host:  # Check if host is loaded
+                        host_assignments.append(HostAssignmentInfo(
+                            event_day_id=assignment.event_day_id,
+                            host_name=assignment.host.name,
+                            host_phone=str(assignment.host.phone_no) if assignment.host.phone_no else None,
+                            host_location=assignment.host.place_name
+                        ))
+        
+        # Create member dict with host assignments
+        member_dict = {
+            "id": member.id,
+            "registration_id": member.registration_id,
+            "name": member.name,
+            "phone_number": member.phone_number,
+            "email": member.email,
+            "city": member.city,
+            "age": member.age,
+            "gender": member.gender,
+            "language": member.language,
+            "floor_preference": member.floor_preference,
+            "special_requirements": member.special_requirements,
+            "status": member.status,
+            "created_at": member.created_at,
+            "updated_at": member.updated_at,
+            "host_assignments": host_assignments
+        }
+        members_data.append(member_dict)
+    
     # Create response with merged daily schedule
     response_data = {
         "registration_id": registration.id,
@@ -241,7 +284,7 @@ async def search_participant_by_phone(
         "notes": registration.notes,
         "created_at": registration.created_at,
         "updated_at": registration.updated_at,
-        "members": registration.members,
+        "members": members_data,
         "daily_schedule": daily_schedule
     }
     
