@@ -171,23 +171,23 @@ async def list_registrations(
     return registrations
 
 
-@router.get("/search/participant", response_model=ParticipantSearchResponse)
+@router.get("/search/participant", response_model=List[ParticipantSearchResponse])
 async def search_participant_by_phone(
     phone_number: str,
     db: Session = Depends(get_db)
 ):
     """
-    Search for a participant by phone number and return comprehensive data.
+    Search for all registrations associated with a phone number and return comprehensive data for each.
     
-    This endpoint performs a single optimized query to retrieve:
-    1. Participant data and registration status
-    2. All members in the group if it's a group registration
-    3. Merged daily schedule combining event days with user preferences
+    This endpoint retrieves:
+    1. Participant data and registration status for all matching registrations
+    2. All members in each group/individual registration
+    3. Merged daily schedule for each registration
     
-    Returns 404 if no participant is found with the given phone number.
+    Returns 404 if no participant is found with the given phone number across any registration.
     """
-    # Single optimized query with all necessary joins (host assignments included)
-    registration = db.query(Registration)\
+    # Find all registrations that have a member with this phone number
+    registrations = db.query(Registration)\
         .options(
             joinedload(Registration.members)
                 .joinedload(RegistrationMember.host_assignments)
@@ -199,96 +199,90 @@ async def search_participant_by_phone(
         )\
         .join(RegistrationMember, Registration.id == RegistrationMember.registration_id)\
         .filter(RegistrationMember.phone_number == phone_number)\
-        .first()
+        .all()
     
-    if not registration:
+    if not registrations:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No participant found with phone number: {phone_number}"
         )
     
-    # Create merged daily schedule
-    daily_schedule = []
-    for preference in registration.daily_preferences:
-        event_day = preference.event_day
-        if event_day:
-            schedule_item = {
-                # Event Day Information
-                "event_day_id": event_day.id,
-                "event_date": event_day.event_date,
-                "location_name": event_day.location_name,
-                "breakfast_provided": event_day.breakfast_provided,
-                "lunch_provided": event_day.lunch_provided,
-                "dinner_provided": event_day.dinner_provided,
-                "daily_notes": event_day.daily_notes,
-                
-                # User Preferences for this day
-                "preference_id": preference.id,
-                "staying_with_yatra": preference.staying_with_yatra,
-                "dinner_at_host": preference.dinner_at_host,
-                "breakfast_at_host": preference.breakfast_at_host,
-                "lunch_with_yatra": preference.lunch_with_yatra,
-                "physical_limitations": preference.physical_limitations,
-                "toilet_preference": preference.toilet_preference,
-                
-                # Timestamps
-                "created_at": preference.created_at,
-                "updated_at": preference.updated_at
-            }
-            daily_schedule.append(schedule_item)
-    
-    # Build members list with host assignment details
-    members_data = []
-    for member in registration.members:
-        # Build host assignments for this member
-        host_assignments = []
-        if member.status in [RegistrationStatus.REGISTERED, RegistrationStatus.CONFIRMED]:
-            if hasattr(member, 'host_assignments') and member.host_assignments:
-                for assignment in member.host_assignments:
-                    if assignment.host:  # Check if host is loaded
-                        host_assignments.append(HostAssignmentInfo(
-                            event_day_id=assignment.event_day_id,
-                            host_name=assignment.host.name,
-                            host_phone=str(assignment.host.phone_no) if assignment.host.phone_no else None,
-                            host_location=assignment.host.place_name
-                        ))
+    results = []
+    for registration in registrations:
+        # Create merged daily schedule
+        daily_schedule = []
+        for preference in registration.daily_preferences:
+            event_day = preference.event_day
+            if event_day:
+                schedule_item = {
+                    "event_day_id": event_day.id,
+                    "event_date": event_day.event_date,
+                    "location_name": event_day.location_name,
+                    "breakfast_provided": event_day.breakfast_provided,
+                    "lunch_provided": event_day.lunch_provided,
+                    "dinner_provided": event_day.dinner_provided,
+                    "daily_notes": event_day.daily_notes,
+                    "preference_id": preference.id,
+                    "staying_with_yatra": preference.staying_with_yatra,
+                    "dinner_at_host": preference.dinner_at_host,
+                    "breakfast_at_host": preference.breakfast_at_host,
+                    "lunch_with_yatra": preference.lunch_with_yatra,
+                    "physical_limitations": preference.physical_limitations,
+                    "toilet_preference": preference.toilet_preference,
+                    "created_at": preference.created_at,
+                    "updated_at": preference.updated_at
+                }
+                daily_schedule.append(schedule_item)
         
-        # Create member dict with host assignments
-        member_dict = {
-            "id": member.id,
-            "registration_id": member.registration_id,
-            "name": member.name,
-            "phone_number": member.phone_number,
-            "email": member.email,
-            "city": member.city,
-            "age": member.age,
-            "gender": member.gender,
-            "language": member.language,
-            "floor_preference": member.floor_preference,
-            "special_requirements": member.special_requirements,
-            "status": member.status,
-            "created_at": member.created_at,
-            "updated_at": member.updated_at,
-            "host_assignments": host_assignments
-        }
-        members_data.append(member_dict)
+        # Build members list with host assignment details
+        members_data = []
+        for member in registration.members:
+            host_assignments = []
+            if member.status in [RegistrationStatus.REGISTERED, RegistrationStatus.CONFIRMED]:
+                if hasattr(member, 'host_assignments') and member.host_assignments:
+                    for assignment in member.host_assignments:
+                        if assignment.host:
+                            host_assignments.append(HostAssignmentInfo(
+                                event_day_id=assignment.event_day_id,
+                                host_name=assignment.host.name,
+                                host_phone=str(assignment.host.phone_no) if assignment.host.phone_no else None,
+                                host_location=assignment.host.place_name
+                            ))
+            
+            member_dict = {
+                "id": member.id,
+                "registration_id": member.registration_id,
+                "name": member.name,
+                "phone_number": member.phone_number,
+                "email": member.email,
+                "city": member.city,
+                "age": member.age,
+                "gender": member.gender,
+                "language": member.language,
+                "floor_preference": member.floor_preference,
+                "special_requirements": member.special_requirements,
+                "status": member.status,
+                "created_at": member.created_at,
+                "updated_at": member.updated_at,
+                "host_assignments": host_assignments
+            }
+            members_data.append(member_dict)
+        
+        results.append({
+            "registration_id": registration.id,
+            "event_id": registration.event_id,
+            "registration_type": registration.registration_type,
+            "transportation_mode": registration.transportation_mode,
+            "has_empty_seats": registration.has_empty_seats,
+            "available_seats_count": registration.available_seats_count,
+            "notes": registration.notes,
+            "created_at": registration.created_at,
+            "updated_at": registration.updated_at,
+            "members": members_data,
+            "daily_schedule": daily_schedule
+        })
     
-    # Create response with merged daily schedule
-    response_data = {
-        "registration_id": registration.id,
-        "event_id": registration.event_id,
-        "registration_type": registration.registration_type,
-        "transportation_mode": registration.transportation_mode,
-        "has_empty_seats": registration.has_empty_seats,
-        "available_seats_count": registration.available_seats_count,
-        "notes": registration.notes,
-        "created_at": registration.created_at,
-        "updated_at": registration.updated_at,
-        "members": members_data,
-        "daily_schedule": daily_schedule
-    }
-    
-    return response_data
+    return results
 
 
 @router.put("/members/{member_id}", response_model=RegistrationMemberResponse, status_code=status.HTTP_200_OK)
