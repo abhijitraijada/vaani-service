@@ -186,6 +186,10 @@ async def search_participant_by_phone(
     
     Returns 404 if no participant is found with the given phone number across any registration.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Searching for registrations with phone number: {phone_number}")
+
     # Find all registrations that have a member with this phone number
     registrations = db.query(Registration)\
         .options(
@@ -202,10 +206,15 @@ async def search_participant_by_phone(
         .all()
     
     if not registrations:
+        logger.warning(f"No registrations found for phone: {phone_number}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No participant found with phone number: {phone_number}"
         )
+    
+    logger.info(f"Found {len(registrations)} registrations for phone: {phone_number}")
+    for r in registrations:
+        logger.info(f" - Registration ID: {r.id}")
     
     results = []
     for registration in registrations:
@@ -282,6 +291,7 @@ async def search_participant_by_phone(
             "daily_schedule": daily_schedule
         })
     
+    logger.info(f"Returning {len(results)} search results")
     return results
 
 
